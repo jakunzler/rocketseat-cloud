@@ -34,3 +34,13 @@ jobs:
 
       - run: 'yarn run test'
         working-directory: code/ci
+
+      - name: Generate tag
+        id: generate_tag
+        run: |
+          SHA=$(echo $GITHUB_SHA | head -c7)
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+
+      - name: Build docker image
+        run: |
+          docker build -t rocketseat-ci-api:latest code/ci
