@@ -1,5 +1,3 @@
 # CI/CD
 
 Blabla
-
-lala
