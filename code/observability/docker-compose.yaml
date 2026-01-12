@@ -1,0 +1,137 @@
+services:
+
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    restart: always
+    command: [ '-config.file/etc/loki/loki.yaml', '-config.expand-env=true' ]
+    volumes:
+      - ./config/loki/loki.yaml:/etc/loki/loki.yaml
+    depends_on:
+      - minio
+    ports:
+      - 3100:3100
+      - 7946
+      - 9095
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    restart: always
+    entrypoint:
+      - sh
+      - -euc
+      - |
+        mkdir -p /data/loki-data && \
+        mkdir -p /data/loki-ruler && \
+        minio server /data --console-address ':9001'
+    environment:
+      - MINIO_ROOT_USER=loki
+      - MINIO_ROOT_PASSWORD=++loki++
+    #command: server ~ --address ':9000' --console-address ':9001'
+    ports:
+      - 9000:9000
+      - 9001:9001
+    volumes:
+      - ./minio-data:/data
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 15s
+      timeout: 10s
+      retries: 3
+ 
+  # bucket:
+  #   image: minio/mc:latest
+  #   container_name: bucket
+  #   restart: always
+  #   depends_on:
+  #     - minio
+  #   entrypoint: >
+  #     /bin/sh -c "
+  #       /usr/bin/mc alias set minio http://minio:9000 loki ++loki++
+  #       /usr/bin/mc rm -r --force minio/loki;
+  #       /usr/bin/mc mb -r minio/loki;
+  #       /usr/bin/mc anonymous set public minio/loki;
+  #       exit 0;
+  #     "
+
+  tempo:
+    image: grafana/tempo:latest
+    container_name: tempo
+    restart: always
+    command: ["-config.file=/etc/tempo.yaml"]
+    expose:
+      - 3200
+      - 4317
+      - 4318
+    volumes:
+      - ./config/tempo/tempo.yaml:/etc/tempo.yaml
+
+  mimir:
+    image: grafana/mimir:latest
+    container_name: mimir
+    restart: always
+    ports:
+      - 9008:9008
+      - 9009:9009
+    command: ["-config.file=/etc/mimir.yaml"]
+    volumes:
+      - ./config/mimir/mimir.yaml:/etc/mimir.yaml
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: always
+    ports:
+      - 9090:9090
+    command: ['--web.enable-remote-write-receiver', '--config.file=/etc/prometheus/prometheus.yaml']
+    volumes:
+      - ./config/prometheus/prometheus.yaml:/etc/prometheus/prometheus.yaml
+  
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: always
+    ports:
+      - 3000:3000
+    volumes:
+      - ./config/grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_FORM_LOGIN=true
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+    depends_on:
+      - loki
+      - prometheus
+      - tempo
+      - mimir
+  
+  otel:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel
+    restart: always
+    ports:
+      - 4317:4317 #grpc
+      - 4318:4318 #http
+      - 8888:8888 #prometheus-collector
+      - 8889:8889 #prometheus-exporter
+      - 1888:1888 #pprof
+      - 13133:13133 #helthcheck
+      - 55679:55679 #zpages
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./config/otel/otel.yaml:/etc/otelcol/config.yaml
+    depends_on:
+      - loki
+      - prometheus
+      - tempo
+      - mimir
+      - grafana
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: promtail
+    volumes:
+      - /var/log:/var/log
+    command: ["-config.file=/etc/promtail/config.yaml"]
