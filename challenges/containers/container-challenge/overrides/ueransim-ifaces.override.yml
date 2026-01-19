@@ -1,0 +1,6 @@
+services:
+  ueransim-gnb:
+    environment:
+      - N2_IFACE=eth1
+      - N3_IFACE=eth0
+      - RADIO_IFACE=eth0

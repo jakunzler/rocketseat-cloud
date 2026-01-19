@@ -1,0 +1,471 @@
+# Laboratório Open5GS totalmente containerizado
+# Arquitetura: Control Plane (Open5GS) + RAN (UERANSIM) + User Plane
+# Autor: Jonas Augusto Kunzler
+# Data: 2025-12-17
+#
+# Estrutura de configuração conforme padrão Open5GS:
+# - Todos os arquivos YAML em configs/open5gs/
+# - Cada serviço usa -c /etc/open5gs/<servico>.yaml
+
+services:
+  # ============================================================================
+  # Database
+  # ============================================================================
+  
+  mongodb:
+    image: ${MONGODB_IMAGE:-mongo:7.0}
+    container_name: open5gs-mongodb-rocket
+    hostname: mongodb
+    networks:
+      net-sbi:
+        ipv4_address: 10.10.0.20
+    volumes:
+      - mongodb-data:/data/db
+      - mongodb-config:/data/configdb
+    environment:
+      - TZ=America/Recife
+      - MONGO_INITDB_DATABASE=open5gs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ============================================================================
+  # Network Functions do Control Plane (Open5GS)
+  # ============================================================================
+  
+  nrf:
+    image: ${OPEN5GS_IMAGE:-gradiant/open5gs:2.7.6}
+    container_name: open5gs-nrf-rocket
+    hostname: nrf
+    entrypoint: ["/entrypoint.sh"]
+    command: /opt/open5gs/bin/open5gs-nrfd -c /etc/open5gs/nrf.yaml
+    networks:
+      net-sbi:
+        ipv4_address: 10.10.0.10
+    volumes:
+      - ./configs/open5gs:/etc/open5gs
+      - ./logs/nrf:/var/log/open5gs
+    environment:
+      - TZ=America/Recife
+    user: root
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f open5gs-nrfd || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  scp:
+    image: ${OPEN5GS_IMAGE:-gradiant/open5gs:2.7.6}
+    container_name: open5gs-scp-rocket
+    hostname: scp
+    entrypoint: ["/entrypoint.sh"]
+    command: /opt/open5gs/bin/open5gs-scpd -c /etc/open5gs/scp.yaml
+    networks:
+      net-sbi:
+        ipv4_address: 10.10.0.200
+    volumes:
+      - ./configs/open5gs:/etc/open5gs
+      - ./logs/scp:/var/log/open5gs
+    environment:
+      - TZ=America/Recife
+    depends_on:
+      nrf:
+        condition: service_healthy
+    user: root
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f open5gs-scpd || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  amf:
+    image: ${OPEN5GS_IMAGE:-gradiant/open5gs:2.7.6}
+    container_name: open5gs-amf-rocket
+    hostname: amf
+    entrypoint: ["/entrypoint.sh"]
+    command: /opt/open5gs/bin/open5gs-amfd -c /etc/open5gs/amf.yaml
+    networks:
+      net-sbi:
+        ipv4_address: 10.10.0.11
+      net-n2:
+        ipv4_address: 10.20.0.11
+    volumes:
+      - ./configs/open5gs:/etc/open5gs
+      - ./logs/amf:/var/log/open5gs
+    environment:
+      - TZ=America/Recife
+    depends_on:
+      nrf:
+        condition: service_healthy
+    user: root
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f open5gs-amfd || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  smf:
+    image: ${OPEN5GS_IMAGE:-gradiant/open5gs:2.7.6}
+    container_name: open5gs-smf-rocket
+    hostname: smf
+    entrypoint: ["/entrypoint.sh"]
+    command: /opt/open5gs/bin/open5gs-smfd -c /etc/open5gs/smf.yaml
+    networks:
+      net-sbi:
+        ipv4_address: 10.10.0.12
+      net-n4:
+        ipv4_address: 10.40.0.12
+    volumes:
+      - ./configs/open5gs:/etc/open5gs
+      - ./configs/open5gs/freeDiameter:/etc/freeDiameter
+      - ./logs/smf:/var/log/open5gs
+    environment:
+      - TZ=America/Recife
+    depends_on:
+      nrf:
+        condition: service_healthy
+    user: root
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f open5gs-smfd || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  ausf:
+    image: ${OPEN5GS_IMAGE:-gradiant/open5gs:2.7.6}
+    container_name: open5gs-ausf-rocket
+    hostname: ausf
+    entrypoint: ["/entrypoint.sh"]
+    command: /opt/open5gs/bin/open5gs-ausfd -c /etc/open5gs/ausf.yaml
+    networks:
+      net-sbi:
+        ipv4_address: 10.10.0.13
+    volumes:
+      - ./configs/open5gs:/etc/open5gs
+      - ./logs/ausf:/var/log/open5gs
+    environment:
+      - TZ=America/Recife
+    depends_on:
+      nrf:
+        condition: service_healthy
+    user: root
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f open5gs-ausfd || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  udm:
+    image: ${OPEN5GS_IMAGE:-gradiant/open5gs:2.7.6}
+    container_name: open5gs-udm-rocket
+    hostname: udm
+    entrypoint: ["/entrypoint.sh"]
+    command: /opt/open5gs/bin/open5gs-udmd -c /etc/open5gs/udm.yaml
+    networks:
+      net-sbi:
+        ipv4_address: 10.10.0.14
+    volumes:
+      - ./configs/open5gs:/etc/open5gs
+      - ./logs/udm:/var/log/open5gs
+    environment:
+      - TZ=America/Recife
+    depends_on:
+      nrf:
+        condition: service_healthy
+    user: root
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f open5gs-udmd || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  udr:
+    image: ${OPEN5GS_IMAGE:-gradiant/open5gs:2.7.6}
+    container_name: open5gs-udr-rocket
+    hostname: udr
+    entrypoint: []
+    command: ["/bin/bash", "/scripts/init-udr.sh"]
+    networks:
+      net-sbi:
+        ipv4_address: 10.10.0.15
+    volumes:
+      - ./configs/open5gs:/etc/open5gs
+      - ./logs/udr:/var/log/open5gs
+      - ./scripts:/scripts:ro
+    environment:
+      - TZ=America/Recife
+    depends_on:
+      nrf:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    user: root
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f open5gs-udrd || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  pcf:
+    image: ${OPEN5GS_IMAGE:-gradiant/open5gs:2.7.6}
+    container_name: open5gs-pcf-rocket
+    hostname: pcf
+    entrypoint: []
+    command: ["/bin/bash", "/scripts/init-pcf.sh"]
+    networks:
+      net-sbi:
+        ipv4_address: 10.10.0.16
+    volumes:
+      - ./configs/open5gs:/etc/open5gs
+      - ./logs/pcf:/var/log/open5gs
+      - ./scripts:/scripts:ro
+    environment:
+      - TZ=America/Recife
+    depends_on:
+      nrf:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    user: root
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f open5gs-pcfd || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  nssf:
+    image: ${OPEN5GS_IMAGE:-gradiant/open5gs:2.7.6}
+    container_name: open5gs-nssf-rocket
+    hostname: nssf
+    entrypoint: ["/entrypoint.sh"]
+    command: /opt/open5gs/bin/open5gs-nssfd -c /etc/open5gs/nssf.yaml
+    networks:
+      net-sbi:
+        ipv4_address: 10.10.0.17
+    volumes:
+      - ./configs/open5gs:/etc/open5gs
+      - ./logs/nssf:/var/log/open5gs
+    environment:
+      - TZ=America/Recife
+    depends_on:
+      nrf:
+        condition: service_healthy
+    user: root
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f open5gs-nssfd || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ============================================================================
+  # User Plane Function (UPF)
+  # ============================================================================
+  
+  upf:
+    image: ${OPEN5GS_IMAGE:-gradiant/open5gs:2.7.6}
+    container_name: open5gs-upf-rocket
+    hostname: upf
+    entrypoint: ["/entrypoint.sh"]
+    command: /opt/open5gs/bin/open5gs-upfd -c /etc/open5gs/upf.yaml
+    privileged: true
+    networks:
+      net-n3:
+        ipv4_address: 10.30.0.21
+      net-n4:
+        ipv4_address: 10.40.0.21
+      net-n6:
+        ipv4_address: 10.50.0.21
+    volumes:
+      - ./configs/open5gs:/etc/open5gs
+      - ./logs/upf:/var/log/open5gs
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      - TZ=America/Recife
+      - IPV4_TUN_ADDR=10.60.0.1/17
+      - IPV6_TUN_ADDR=2001:db8:cafe::1/48
+      - IPV4_TUN_SUBNET=10.60.0.0/17
+      - ENABLE_NAT=true
+    depends_on:
+      smf:
+        condition: service_started
+    user: root
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+      - NET_RAW
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f open5gs-upfd || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ============================================================================
+  # Data Network (DN) - Simula rede externa/internet
+  # ============================================================================
+  
+  dn:
+    image: ${DN_IMAGE:-alpine:latest}
+    container_name: open5gs-dn-rocket
+    hostname: dn
+    command: >
+      sh -c "
+        apk add --no-cache iptables iproute2 net-tools tcpdump curl wget;
+        echo 1 > /proc/sys/net/ipv4/ip_forward;
+        iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE;
+        tail -f /dev/null
+      "
+    networks:
+      net-n6:
+        ipv4_address: 10.50.0.100
+    privileged: true
+    restart: unless-stopped
+
+  # ============================================================================
+  # RAN (Radio Access Network) - UERANSIM
+  # ============================================================================
+  
+  ueransim-gnb:
+    image: ${UERANSIM_IMAGE:-gradiant/ueransim:3.2.6}
+    container_name: ueransim-gnb-rocket
+    hostname: ueransim-gnb
+    working_dir: /UERANSIM
+    entrypoint: ["/entrypoint.sh", "gnb"]
+    command: []
+    networks:
+      net-n2:
+        ipv4_address: 10.20.0.100
+      net-n3:
+        ipv4_address: 10.30.0.100
+    volumes:
+      - ./configs/ueransim:/etc/ueransim
+      - ./logs/ueransim:/ueransim/logs
+    environment:
+      - TZ=America/Recife
+      - MCC=001
+      - MNC=01
+      - TAC=7
+      # Ajuste para compatibilizar com entrypoint do UERANSIM:
+      # O script interno poderá inverter N2/N3 dependendo de qual interface sobe primeiro.
+      # Resultado desejado:
+      #   - N2_BIND_IP = 10.20.0.100 (net-n2)
+      #   - N3_BIND_IP = 10.30.0.100 (net-n3)
+      - N2_IFACE=eth0
+      - N3_IFACE=eth1
+      - RADIO_IFACE=eth0
+      - AMF_HOSTNAME=amf
+    depends_on:
+      amf:
+        condition: service_started
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+
+  ueransim-ue:
+    image: ${UERANSIM_IMAGE:-gradiant/ueransim:3.2.6}
+    container_name: ueransim-ue-rocket
+    hostname: ueransim-ue
+    working_dir: /UERANSIM
+    entrypoint: ["/entrypoint.sh", "ue"]
+    command: []
+    networks:
+      net-n2:
+        ipv4_address: 10.20.0.200
+      ue-subnet:
+        ipv4_address: 10.60.0.10
+    volumes:
+      - ./configs/ueransim:/etc/ueransim
+      - ./logs/ueransim:/ueransim/logs
+    environment:
+      - TZ=America/Recife
+      - GNB_HOSTNAME=ueransim-gnb
+    depends_on:
+      ueransim-gnb:
+        condition: service_started
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+
+# ============================================================================
+# Redes Docker Bridge com CIDRs específicos
+# ============================================================================
+networks:
+  # Service Based Interface (SBI) - Comunicação entre NFs do control plane
+  net-sbi:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.0.0/16
+          gateway: 10.10.0.1
+
+  # N2 Interface - NGAP entre gNB e AMF
+  net-n2:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.20.0.0/16
+          gateway: 10.20.0.1
+
+  # N3 Interface - GTP-U entre gNB e UPF
+  net-n3:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.30.0.0/16
+          gateway: 10.30.0.1
+
+  # N4 Interface - PFCP entre SMF e UPF
+  net-n4:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.40.0.0/16
+          gateway: 10.40.0.1
+
+  # N6 Interface - Interface entre UPF e Data Network
+  net-n6:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.50.0.0/16
+          gateway: 10.50.0.1
+
+  # UE Subnet - Rede para UEs (IPs alocados pelo UPF)
+  ue-subnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.60.0.0/16
+          gateway: 10.60.0.1
+
+volumes:
+  mongodb-data:
+    driver: local
+  mongodb-config:
+    driver: local
