@@ -1,0 +1,18 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+# Variáveis locais e project_id — não comitar
+.env
+environments/*/.env
+environments/*/terraform.tfvars
+# Use *.auto.tfvars ou *secret*.tfvars localmente; não comite arquivos com credenciais.
+*.local.tfvars
+*secret*.tfvars
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
