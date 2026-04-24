@@ -1,8 +1,8 @@
 # shellcheck shell=bash
-# Carrega ficheiros .env e produz argumentos -var (precedência máxima no Terraform) a partir
-# de TF_VAR_<nome> para não serem anulados por terraform.tfvars local.
+# Carrega arquivos .env e monta argumentos -var (precedência máxima no Terraform) a partir
+# de TF_VAR_<nome> para não serem sobrescritos por terraform.tfvars local.
 
-# Uso: após definir ROOT e TARGET; source este ficheiro; load_dotenv; build_tf_var_args; terraform apply "${tf_var_args[@]}"
+# Uso: após definir ROOT e TARGET; source este arquivo; load_dotenv; build_tf_var_args; terraform apply "${tf_var_args[@]}"
 
 load_dotenv() {
   local f

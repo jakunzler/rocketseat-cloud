@@ -32,15 +32,15 @@ Cada ambiente em `environments/<env>/` é um **módulo raiz** com estado própri
 - Projeto no GCP, faturamento ativo, permissões para criar Compute, Load Balancing, Secret Manager, IAM, APIs  
 - Autenticação: `gcloud auth application-default login` ou `GOOGLE_APPLICATION_CREDENTIALS` (conta de serviço) — **não** commite chaves
 
-## Ficheiro `.env` (não comitar)
+## Arquivo `.env` (não comitar)
 
 1. Na raiz `iac-challenge-solution`, copie [`.env.example`](./.env.example) para **`.env`** (este nome está no [`.gitignore`](./.gitignore)).  
 2. Preencha pelo menos `TF_VAR_project_id` com o **ID** real do projeto GCP. Opcionalmente `TF_VAR_region`, `TF_VAR_zone`, `TF_VAR_common_labels` (JSON numa linha), etc.  
 3. Pode ainda colocar um **`.env`** em `environments/<env>/` para sobrescrever só nesse ambiente (carregado depois do da raiz).  
-4. **Precedência no Terraform:** variáveis `TF_VAR_*` no ambiente têm **menor** precedência do que ficheiros `terraform.tfvars`. Por isso, os scripts `subir.sh` e `descer.sh` leem o `.env` e passam os valores com **`-var=...` na linha de comando** (máxima precedência), evitando conflito com ficheiros locais.  
+4. **Precedência no Terraform:** variáveis `TF_VAR_*` no ambiente têm **menor** precedência do que arquivos `terraform.tfvars`. Por isso, os scripts `subir.sh` e `descer.sh` leem o `.env` e passam os valores com **`-var=...` na linha de comando** (máxima precedência), evitando conflito com arquivos locais.  
 5. **Alternativa:** crie `environments/<env>/terraform.tfvars` a partir de `terraform.tfvars.example` (também não versionado) e defina `project_id` aí. Não comite `terraform.tfvars` nem `.env` com o seu projeto.
 
-**Credenciais:** em `.env` pode fazer `export GOOGLE_APPLICATION_CREDENTIALS=/caminho/para/sa.json` (ficheiro de chave **fora** do repositório).
+**Credenciais:** em `.env` pode fazer `export GOOGLE_APPLICATION_CREDENTIALS=/caminho/para/sa.json` (arquivo de chave **fora** do repositório).
 
 ## Uso
 
@@ -99,10 +99,10 @@ Custo: NAT, balanceador, instâncias e tráfego geram cobrança. Remova o ambien
 
 ### Migração: sub-rede `proxy` do módulo `network` para o módulo `app`
 
-Se já tens no state `module.network.google_compute_subnetwork.proxy_only` e fazes `terraform plan` após atualizar o código, o plano pode mostrar *destroy* no `network` e *create* no `app` para a mesma sub-rede. Para evitar destruição/criação, a partir de `environments/<env>/` executa **uma** vez, antes de `apply`:
+Se você já tem no state `module.network.google_compute_subnetwork.proxy_only` e executa `terraform plan` após atualizar o código, o plano pode mostrar *destroy* no `network` e *create* no `app` para a mesma sub-rede. Para evitar destruição/criação, a partir de `environments/<env>/` executa **uma** vez, antes de `apply`:
 
 ```bash
 terraform state mv 'module.network.google_compute_subnetwork.proxy_only' 'module.app.google_compute_subnetwork.proxy_only'
 ```
 
-Se o endereço antigo não existir (projeto novo), ignora o comando. Se falhar, verifica o state com `terraform state list` | `grep proxy`.
+Se o endereço antigo não existir (projeto novo), ignore o comando. Se falhar, verifica o state com `terraform state list` | `grep proxy`.

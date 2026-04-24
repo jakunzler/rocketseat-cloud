@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Derruba a infra (terraform destroy) de um ambiente. Por predefinição pede confirmação.
+# Derruba a infra (terraform destroy) de um ambiente. Por padrão pede confirmação.
 # Carrega .env como em subir.sh.
 set -euo pipefail
 
@@ -37,7 +37,7 @@ if [[ ! -d "$TARGET" ]]; then
 fi
 
 if [[ "$skip_confirm" -eq 0 ]]; then
-  read -r -p "Isto destrói a infra de '$env' no GCP (terraform destroy). Continuar? [s/N] " reply
+  read -r -p "Isso destrói a infra de '$env' no GCP (terraform destroy). Continuar? [s/N] " reply
   case "$reply" in
     [sS]|[sS][iI][mM]|[yY]|[yY][eE][sS]) ;;
     *) echo "Cancelado."; exit 0 ;;
@@ -50,7 +50,7 @@ build_tf_var_args
 cd "$TARGET"
 echo "==> Ambiente: $env (em $TARGET)"
 if [[ ! -d .terraform ]]; then
-  echo "==> terraform init (diretório .terraform em falta)"
+  echo "==> terraform init (diretório .terraform ausente)"
   terraform init
 fi
 echo "==> terraform destroy -auto-approve"
