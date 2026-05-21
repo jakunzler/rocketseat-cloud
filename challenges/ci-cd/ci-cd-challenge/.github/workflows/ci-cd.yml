@@ -1,0 +1,187 @@
+# Pipeline: testes -> build ECR -> Terraform (dev) -> health check -> Terraform (prod)
+# Caminhos relativos ao monorepo rocketseat-cloud; se usar esta pasta como raiz do repo,
+# ajuste APP_DIR / TF_DIR_* para "app" e "terraform/environments/...".
+
+name: CI/CD App Runner
+
+on:
+  push:
+    branches: [prod]
+    paths:
+      - 'challenges/ci-cd/ci-cd-challenge/**'
+  pull_request:
+    branches: [prod]
+    paths:
+      - 'challenges/ci-cd/ci-cd-challenge/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  APP_DIR: challenges/ci-cd/ci-cd-challenge/app
+  TF_DIR_DEV: challenges/ci-cd/ci-cd-challenge/terraform/environments/dev
+  TF_DIR_PROD: challenges/ci-cd/ci-cd-challenge/terraform/environments/prod
+  ECR_REPO_DEV: ci-cd-challenge-dev
+  ECR_REPO_PROD: ci-cd-challenge-prod
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  test:
+    name: Testes e lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.APP_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm run lint
+      - run: npm test
+
+  terraform-plan:
+    name: Terraform plan (PR)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [dev, prod]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.0
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Terraform init & plan
+        working-directory: challenges/ci-cd/ci-cd-challenge/terraform/environments/${{ matrix.environment }}
+        run: |
+          terraform init -input=false
+          terraform plan -input=false -no-color
+
+  deploy-dev:
+    name: Build e deploy (dev)
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: development
+    outputs:
+      image_uri: ${{ steps.image.outputs.uri }}
+      service_url: ${{ steps.tf-apply.outputs.service_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.0
+          terraform_wrapper: false
+
+      - name: Terraform init (dev)
+        working-directory: ${{ env.TF_DIR_DEV }}
+        run: terraform init -input=false
+
+      - name: Garantir repositorio ECR (dev)
+        working-directory: ${{ env.TF_DIR_DEV }}
+        run: |
+          terraform apply -input=false -auto-approve \
+            -target=module.apprunner.aws_ecr_repository.app
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr-login
+
+      - name: Build e push da imagem (dev)
+        id: image
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        run: |
+          SHORT_SHA=$(echo "${GITHUB_SHA}" | head -c7)
+          IMAGE="${REGISTRY}/${{ env.ECR_REPO_DEV }}:${SHORT_SHA}"
+          docker build -t "$IMAGE" "${{ env.APP_DIR }}"
+          docker push "$IMAGE"
+          echo "uri=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Terraform apply (dev) com nova imagem
+        id: tf-apply
+        working-directory: ${{ env.TF_DIR_DEV }}
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.uri }}
+        run: |
+          terraform apply -input=false -auto-approve -var="image_uri=${IMAGE_URI}"
+          echo "service_url=$(terraform output -raw service_url)" >> "$GITHUB_OUTPUT"
+
+  health-check-dev:
+    name: Health check (dev)
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verificar /health
+        env:
+          SERVICE_URL: ${{ needs.deploy-dev.outputs.service_url }}
+        run: |
+          chmod +x challenges/ci-cd/ci-cd-challenge/scripts/health-check.sh
+          challenges/ci-cd/ci-cd-challenge/scripts/health-check.sh "$SERVICE_URL"
+
+  deploy-prod:
+    name: Deploy (prod)
+    needs: [deploy-dev, health-check-dev]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.0
+          terraform_wrapper: false
+
+      - name: Terraform init (prod)
+        working-directory: ${{ env.TF_DIR_PROD }}
+        run: terraform init -input=false
+
+      - name: Garantir repositorio ECR (prod)
+        working-directory: ${{ env.TF_DIR_PROD }}
+        run: |
+          terraform apply -input=false -auto-approve \
+            -target=module.apprunner.aws_ecr_repository.app
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr-login-prod
+
+      - name: Build e push da imagem (prod)
+        id: image-prod
+        env:
+          REGISTRY: ${{ steps.ecr-login-prod.outputs.registry }}
+        run: |
+          SHORT_SHA=$(echo "${GITHUB_SHA}" | head -c7)
+          IMAGE="${REGISTRY}/${{ env.ECR_REPO_PROD }}:${SHORT_SHA}"
+          docker build -t "$IMAGE" "${{ env.APP_DIR }}"
+          docker push "$IMAGE"
+          echo "uri=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Terraform apply (prod)
+        working-directory: ${{ env.TF_DIR_PROD }}
+        env:
+          IMAGE_URI: ${{ steps.image-prod.outputs.uri }}
+        run: |
+          terraform apply -input=false -auto-approve -var="image_uri=${IMAGE_URI}"
+          terraform output -no-color service_url

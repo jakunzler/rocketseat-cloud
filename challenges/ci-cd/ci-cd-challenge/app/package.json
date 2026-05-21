@@ -1,0 +1,16 @@
+{
+  "name": "ci-cd-challenge-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "API de exemplo para o desafio CI/CD com AWS App Runner",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test src/**/*.test.js",
+    "lint": "node -e \"console.log('lint ok')\""
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

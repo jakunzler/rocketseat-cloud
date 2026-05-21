@@ -1,0 +1,28 @@
+# Dependências e build
+node_modules/
+dist/
+coverage/
+*.log
+npm-debug.log*
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+override.tf
+*_override.tf
+.terraform.lock.hcl
+environments/*/terraform.tfvars
+*.auto.tfvars
+
+# Ambiente local
+.env
+.env.*
+!.env.example
+
+# IDE / SO
+.idea/
+.vscode/
+.DS_Store
