@@ -1,0 +1,13 @@
+# Cluster Kind para o desafio (1 control-plane + 1 worker)
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: desafio-k8s
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+  - role: worker
